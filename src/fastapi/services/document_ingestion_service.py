@@ -46,6 +46,7 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 
 VISION_CONFIG = {
             "openai_enabled": bool(openai_api_key),
+            "openai_desc_enabled": bool(openai_api_key),
             "ollama_enabled": True,
             "huggingface_enabled": True,
             "enhanced_local_enabled": True,
@@ -190,8 +191,13 @@ async def describe_with_openai_markitdown(image_path: str, api_key: str = openai
         logger.warning(f"OpenAI MarkItDown failed for {image_path}: {e}")
         return None
     
-def describe_with_openai_desc(image_path: str, api_key: str = openai_api_key) -> Optional[str]:
+def describe_with_openai_desc(image_path: str, api_key: str = openai_api_key, prompt_override: str = None) -> Optional[str]:
     """Use OpenAI image description models with prompting for description"""
+    logger.debug("Describe with OpenAI function called")
+    if not VISION_CONFIG["openai_desc_enabled"]:
+        logger.info("OpenAI Desc is disabled")
+        return None
+
     try:
         if not (api_key or openai_api_key):
             logger.info("No Open AI API key available for image description")
@@ -212,14 +218,41 @@ def describe_with_openai_desc(image_path: str, api_key: str = openai_api_key) ->
         
         try:
             from langchain_openai import ChatOpenAI
-            img_prompt = "You are analyzing {}. Describe and provide the count terrain, activity, gear, personnel, and vehicles. " \
-            "Always give the count in the form of a range with inclusive numbers. "
-            openai_model = ChatOpenAI
+            from langchain_core.messages import HumanMessage
+            openai_model = ChatOpenAI(model="gpt-4o", api_key=api_key)
         except ImportError as e:
             logger.error("Failed import for langchain_openai. Please install it using 'pip install langchain_openai'")
+            return None
         
+        if prompt_override:
+            prompt = prompt_override
+        else:
+            img_prompt = "You are analyzing {}. Describe and provide the count terrain, activity, gear, personnel, and vehicles. " \
+            "Always give the count in the form of a range with inclusive numbers. "
+            prompt = img_prompt.format("a tactical military image")
+        
+        with open(image_path, "rb") as img:
+            content = img.read()
+        image_base64 = base64.b64encode(content).decode("utf-8")
+        
+        content = [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+            ]
+        message = []
+        message.append(HumanMessage(content=content))
+        logger.info(f"Sending {image_path} to openai gpt-4o")
+        try:
+            response = openai_model.invoke(message)
+            return response.content
+        except Exception as e:
+            logger.error(f"OpenAI invocation failed: {e}") 
+            return None
+           
     except Exception as e:
         logger.warning(f"OpenAI Image Description failed for {image_path}: {e}")
+        # Disable OpenAI Image Desc for subsequent attempts if it fails
+        VISION_CONFIG["openai_desc_enabled"] = False
         return None
 
 def describe_with_ollama_vision(image_path: str) -> Optional[str]:
@@ -505,6 +538,8 @@ async def describe_images_for_pages(
                 d = None
                 if "openai" in enabled_models and vision_flags.get("openai", False):
                     d = await describe_with_openai_markitdown(img_path, api_key_override)
+                if "openai_desc" in enabled_models and vision_flags.get("openai_desc", False):
+                    d = describe_with_openai_desc(img_path, api_key_override)
                 if not d and "ollama" in enabled_models and vision_flags.get("ollama", False):
                     d = describe_with_ollama_vision(img_path)
                 if not d and "huggingface" in enabled_models and vision_flags.get("huggingface", False):
@@ -1081,20 +1116,23 @@ def process_document_with_context_multi_model(file_content: bytes,
     with open(temp_file_path, 'wb') as f:
         f.write(file_content)
 
-    try:
-        md_instance = get_markitdown_instance(openai_api_key)
-        result = md_instance.convert(temp_file_path)
-        content = result.text_content if hasattr(result, 'text_content') else str(result)
-        logger.info(f"MarkItDown extracted content length: {len(content)} characters")
-    except Exception as e:
-        logger.error(f"MarkItDown processing failed for {filename}: {e}")
-        if file_extension == '.txt':
-            content = file_content.decode('utf-8', errors='ignore')
-        else:
-            content = f"Document: {filename}\n\nContent could not be extracted via MarkItDown."
+    if "openai_desc" in selected_models and vision_flags.get("openai_desc", False):
+        content = describe_with_openai_desc(os.path.join(IMAGES_DIR, f"{filename}"), openai_api_key)
+        logger.info(f"OpenAI Desc used for non-pdf. Response content length: {len(content)}")
+    else:
+        try:
+            md_instance = get_markitdown_instance(openai_api_key)
+            result = md_instance.convert(temp_file_path)
+            content = result.text_content if hasattr(result, 'text_content') else str(result)
+            logger.info(f"MarkItDown extracted content length: {len(content)} characters")
+        except Exception as e:
+            logger.error(f"MarkItDown processing failed for {filename}: {e}")
+            if file_extension == '.txt':
+                content = file_content.decode('utf-8', errors='ignore')
+            else:
+                content = f"Document: {filename}\n\nContent could not be extracted via MarkItDown."
 
     if file_extension in [".jpg", ".png"]:
-        logger.debug(content)
         content = content.replace("# Description:\n", "")
         images_data.append({
                     "filename": filename,

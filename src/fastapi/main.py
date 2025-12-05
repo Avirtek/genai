@@ -33,7 +33,7 @@ def on_startup():
             if uvicorn_logger.handlers:
                 logger.addHandler(uvicorn_logger.handlers[0])
 
-    for logger_name in ["POSITION_AWARE_RECONSTRUCTION"]:
+    for logger_name in ["DOC_INGESTION_SERVICE"]:
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.DEBUG)
         # Ensure it has a handler (use uvicorn's handler)
