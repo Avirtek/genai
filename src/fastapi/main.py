@@ -33,6 +33,15 @@ def on_startup():
             if uvicorn_logger.handlers:
                 logger.addHandler(uvicorn_logger.handlers[0])
 
+    for logger_name in ["POSITION_AWARE_RECONSTRUCTION"]:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.DEBUG)
+        # Ensure it has a handler (use uvicorn's handler)
+        if not logger.handlers:
+            uvicorn_logger = logging.getLogger("uvicorn")
+            if uvicorn_logger.handlers:
+                logger.addHandler(uvicorn_logger.handlers[0])
+
     init_db()
 
 app.include_router(chat_api_router, prefix="/api")

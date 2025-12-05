@@ -1,8 +1,8 @@
 services:
   base-poetry-deps:
-    build:
-      context: .
-      dockerfile: Dockerfile.base
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.base
     image: base-poetry-deps
     mem_limit: 4g
   postgres:

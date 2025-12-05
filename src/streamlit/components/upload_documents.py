@@ -419,7 +419,7 @@ def render_upload_component(
         st.subheader("Upload Documents")
         uploaded = st.file_uploader(
             "Select files to upload:",
-            type=['pdf', 'docx', 'txt', 'xlsx', 'pptx', 'html', 'csv'],
+            type=['pdf', 'docx', 'txt', 'xlsx', 'pptx', 'html', 'csv', 'jpg', 'png'],
             accept_multiple_files=True,
             key=pref("files")
         )
@@ -434,12 +434,14 @@ def render_upload_component(
         # Vision model selection
         st.subheader("Vision Models")
         openai_v = st.checkbox("OpenAI Vision", value=False, key=pref("openai_vision"))
+        openai_desc = st.checkbox("OpenAI Image Description LLM", value=False, key=pref("desc_openai"))
         # ollama_v = st.checkbox("Ollama Vision", value=False, key=pref("ollama_vision"))
         hf_v = st.checkbox("HuggingFace BLIP Vision", value=False, key=pref("hf_vision"))
         enhanced_v = st.checkbox("Enhanced Vision Model", value=False, key=pref("enhanced_vision"))
         basic_v = st.checkbox("Basic Vision Model", value=False, key=pref("basic_vision"))
         vision_models = []
         if openai_v: vision_models.append("openai")
+        if openai_desc: vision_models.append("openai_desc")
         # if ollama_v: vision_models.append("ollama")
         if hf_v: vision_models.append("huggingface")
         if enhanced_v: vision_models.append("enhanced_local")

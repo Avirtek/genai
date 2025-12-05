@@ -1,5 +1,8 @@
 import streamlit as st
 import pandas as pd
+import requests
+from PIL import Image
+from io import BytesIO
 from typing import List, Dict, Optional
 from config.settings import config
 from lib.api.client import api_client
@@ -378,9 +381,17 @@ def render_document_management(key_prefix: str):
                                 # Convert to URL path
                                 filename = storage_path.split('/')[-1] if '/' in storage_path else storage_path
                                 image_url = f"{VECTORDB_API}/images/{filename}"
-
+                                    
                                 try:
-                                    st.image(image_url, caption=img.get('filename', ''))
+                                    # Use FastAPI service URL (works from inside Docker and from host)
+                                    # Use config.endpoints to get the correct URL
+                                    resp = requests.get(image_url, timeout=5)
+                                    resp.raise_for_status()
+                                    image = Image.open(BytesIO(resp.content))
+
+                                    # Display image with clean caption
+                                    st.image(image, caption=filename, use_container_width=True)
+                                    image_counter += 1
                                 except:
                                     st.warning("Image preview not available")
 

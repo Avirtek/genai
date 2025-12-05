@@ -190,6 +190,38 @@ async def describe_with_openai_markitdown(image_path: str, api_key: str = openai
         logger.warning(f"OpenAI MarkItDown failed for {image_path}: {e}")
         return None
     
+def describe_with_openai_desc(image_path: str, api_key: str = openai_api_key) -> Optional[str]:
+    """Use OpenAI image description models with prompting for description"""
+    try:
+        if not (api_key or openai_api_key):
+            logger.info("No Open AI API key available for image description")
+            return None
+            
+        # Verify image file exists and is readable
+        if not os.path.exists(image_path):
+            logger.error(f"Image file not found: {image_path}")
+            return None
+            
+        # Verify it's a valid image
+        try:
+            with Image.open(image_path) as img:
+                img.verify()
+        except Exception as e:
+            logger.error(f"Invalid image file {image_path}: {e}")
+            return None
+        
+        try:
+            from langchain_openai import ChatOpenAI
+            img_prompt = "You are analyzing {}. Describe and provide the count terrain, activity, gear, personnel, and vehicles. " \
+            "Always give the count in the form of a range with inclusive numbers. "
+            openai_model = ChatOpenAI
+        except ImportError as e:
+            logger.error("Failed import for langchain_openai. Please install it using 'pip install langchain_openai'")
+        
+    except Exception as e:
+        logger.warning(f"OpenAI Image Description failed for {image_path}: {e}")
+        return None
+
 def describe_with_ollama_vision(image_path: str) -> Optional[str]:
     """Use Ollama vision model for image description"""
     try:
@@ -450,6 +482,10 @@ async def describe_images_for_pages(
                     d = await describe_with_openai_markitdown(img_path, api_key_override)
                     if d:
                         all_desc["OpenAI"] = d
+                if "openai_desc" in enabled_models and vision_flags.get("openai_desc", False):
+                    d = describe_with_openai_desc(img_path, api_key_override)
+                    if d:
+                        all_desc["OpenAIDesc"] = d
                 if "ollama" in enabled_models and vision_flags.get("ollama", False):
                     d = describe_with_ollama_vision(img_path)
                     if d: all_desc["Ollama"] = d
@@ -1057,6 +1093,18 @@ def process_document_with_context_multi_model(file_content: bytes,
         else:
             content = f"Document: {filename}\n\nContent could not be extracted via MarkItDown."
 
+    if file_extension in [".jpg", ".png"]:
+        logger.debug(content)
+        content = content.replace("# Description:\n", "")
+        images_data.append({
+                    "filename": filename,
+                    "storage_path": os.path.join(IMAGES_DIR, f"{filename}"),
+                    "description": content,
+                    "position_marker": f"[IMAGE:{filename}]",
+                    "page": 1
+                })
+        content = ""
+
     # Enhanced image integration strategy (same as before)
     if images_data:
         logger.info(f"Integrating {len(images_data)} images into document content")
@@ -1076,7 +1124,6 @@ def process_document_with_context_multi_model(file_content: bytes,
                 enhanced_content.append(f"\n--- Page {page_num} ---\n")
                 for img_data in pages_with_images[page_num]:
                     enhanced_content.append(f"{img_data['position_marker']}")
-                    enhanced_content.append(f"Image Description: {img_data['description']}\n")
             
             content = "\n".join(enhanced_content)
         
@@ -1343,6 +1390,11 @@ def run_ingest_job(
                 elif ext in (".html", ".htm"):
                     pages_data = extract_images_from_html(content, fname, tmp_dir, fname)
 
+                # Image Support
+                elif ext in (".jpg", ".png"):
+                    logger.debug(f"Storing image {fname} to stored images")
+                    pages_data = extract_images_from_img(content, fname, tmp_dir, fname)
+
                 else:
                     # txt, csv, pptx, etc → no images
                     pages_data = [{"page": 1, "images": [], "text": None}]
@@ -1604,3 +1656,12 @@ def extract_images_from_html(html_bytes, _filename, _temp_dir, doc_id):
             continue
         pages[0]["images"].append(out)
     return pages
+
+def extract_images_from_img(file_content: bytes, filename: str, _temp_dir: str, doc_id: str):   
+    ext = filename.split(".")[-1] 
+    pages_data = [{"page": 1, "images": [], "text": None}] 
+    name = f"{filename}"
+    out  = os.path.join(IMAGES_DIR, name)
+    with open(out,"wb") as f: f.write(file_content)
+    pages_data[0]["images"].append(out)
+    return pages_data
