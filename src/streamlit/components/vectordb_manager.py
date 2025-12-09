@@ -287,10 +287,8 @@ def render_document_management(key_prefix: str):
 
             with col1:
                 # Checkbox for selection
-                is_selected = doc_key in st.session_state[f"{key_prefix}_selected_docs"]
                 if st.checkbox(
                     f"{doc_name}",
-                    value=is_selected,
                     key=f"{key_prefix}_checkbox_{doc_key}"
                 ):
                     if doc_key not in st.session_state[f"{key_prefix}_selected_docs"]:
