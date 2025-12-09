@@ -9,7 +9,7 @@ from config.settings import config
 from services.chromadb_service import chromadb_service
 from lib.utils import render_reconstructed_document
 from components.job_status_monitor import JobStatusMonitor
-
+VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm"]
 
 @st.cache_resource(show_spinner=False)
 def get_embedding_model() -> SentenceTransformer:
@@ -417,12 +417,17 @@ def render_upload_component(
 
         st.markdown("---")
         st.subheader("Upload Documents")
+        
         uploaded = st.file_uploader(
             "Select files to upload:",
-            type=['pdf', 'docx', 'txt', 'xlsx', 'pptx', 'html', 'csv', 'jpg', 'png'],
+            type=['pdf', 'docx', 'txt', 'xlsx', 'pptx', 'html', 'csv', 'jpg', 'png'] + VIDEO_EXTENSIONS,
             accept_multiple_files=True,
             key=pref("files")
         )
+        video_uploaded = any(
+            file.name.lower().endswith(tuple(VIDEO_EXTENSIONS))
+            for file in uploaded
+        ) if uploaded else False
 
         st.subheader("Ingest Web URL")
         url = st.text_input(
@@ -431,14 +436,25 @@ def render_upload_component(
             key="ingest_url"
         )
 
+        # Disable all buttons besides openai desc when video uploaded
+        if video_uploaded:
+            for key in [
+            pref("openai_vision"),
+            pref("hf_vision"),
+            pref("enhanced_vision"),
+            pref("basic_vision")]:
+                if key in st.session_state:
+                    st.session_state[key] = False
+
         # Vision model selection
         st.subheader("Vision Models")
-        openai_v = st.checkbox("OpenAI Vision", value=False, key=pref("openai_vision"))
+        openai_v = st.checkbox("OpenAI Vision", value=False, disabled=video_uploaded, key=pref("openai_vision"))
         openai_desc = st.checkbox("OpenAI Image Description LLM", value=False, key=pref("desc_openai"))
         # ollama_v = st.checkbox("Ollama Vision", value=False, key=pref("ollama_vision"))
-        hf_v = st.checkbox("HuggingFace BLIP Vision", value=False, key=pref("hf_vision"))
-        enhanced_v = st.checkbox("Enhanced Vision Model", value=False, key=pref("enhanced_vision"))
-        basic_v = st.checkbox("Basic Vision Model", value=False, key=pref("basic_vision"))
+        hf_v = st.checkbox("HuggingFace BLIP Vision", value=False, disabled=video_uploaded, key=pref("hf_vision"))
+        enhanced_v = st.checkbox("Enhanced Vision Model", value=False, disabled=video_uploaded, key=pref("enhanced_vision"))
+        basic_v = st.checkbox("Basic Vision Model", value=False, disabled=video_uploaded, key=pref("basic_vision"))
+        
         vision_models = []
         if openai_v: vision_models.append("openai")
         if openai_desc: vision_models.append("openai_desc")

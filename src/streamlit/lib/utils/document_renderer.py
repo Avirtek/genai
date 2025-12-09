@@ -5,6 +5,7 @@ from io import BytesIO
 from config.settings import config
 import re
 
+VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm"]
 
 def clean_markdown_formatting(text: str) -> str:
     """Remove markdown formatting from text for display in alt text and captions."""
@@ -79,15 +80,21 @@ def render_reconstructed_document(result: dict):
                     image_fetch_url = f"{CHROMADB_API}/images/{filename}"
                     resp = requests.get(image_fetch_url, timeout=5)
                     resp.raise_for_status()
-                    image = Image.open(BytesIO(resp.content))
+                    content = BytesIO(resp.content)
+                    mime = resp.headers["content-type"]
 
                     # Display image with clean caption
-                    st.image(image, caption=clean_alt, use_container_width=True)
+                    if ("."+filename.split(".")[-1] in VIDEO_EXTENSIONS):
+                        st.video(content, format=mime)
+                        st.caption(filename)
+                    else:
+                        image = Image.open(content)
+                        st.image(image, caption=clean_alt, use_container_width=True)
                     image_counter += 1
 
                 except Exception as e:
                     # Show placeholder if image can't be fetched
-                    st.warning(f" Image not available: {filename}")
+                    st.warning(f"Image not available: {filename}")
                     st.caption(f"Alt text: {clean_alt}")
 
                 i += 2
@@ -104,8 +111,15 @@ def render_reconstructed_document(result: dict):
                     try:
                         resp = requests.get(f"{CHROMADB_API}/images/{img['filename']}", timeout=5)
                         resp.raise_for_status()
-                        image = Image.open(BytesIO(resp.content))
-                        st.image(image, caption=img['filename'])
+                        content = BytesIO(resp.content)
+                        mime = resp.headers["content-type"].split(";")[0]
+
+                        if ("."+img['filename'].split(".")[-1] in VIDEO_EXTENSIONS):
+                            st.video(content, format=mime)
+                            st.caption(img['filename'])
+                        else:
+                            image = Image.open(content)
+                            st.image(image, caption=img['filename'])
                     except Exception as e:
                         st.write(f"Image preview not available: {e}")
 

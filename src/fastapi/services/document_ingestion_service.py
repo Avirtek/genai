@@ -110,6 +110,8 @@ logger.info(f"Embedding model: {EMBEDDING_MODEL_NAME}")
 logger.info(f"Redis: {REDIS_URL}")
 logger.info(f"Position-aware extraction: {'ENABLED' if USE_POSITION_AWARE else 'DISABLED'}")
 
+VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm"]
+IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png"]
 
 # =============================================================================
 # Image Description Functions
@@ -190,7 +192,20 @@ async def describe_with_openai_markitdown(image_path: str, api_key: str = openai
     except Exception as e:
         logger.warning(f"OpenAI MarkItDown failed for {image_path}: {e}")
         return None
+
+def verify_video(path):
+    cap = cv2.VideoCapture(path)
     
+    if not cap.isOpened():
+        logger.debug("Failed to open video file")
+        return False  # cannot open at all
+    
+    # Try reading one frame
+    ok, frame = cap.read()
+    cap.release()
+    
+    return ok and (frame is not None)
+
 def describe_with_openai_desc(image_path: str, api_key: str = openai_api_key, prompt_override: str = None) -> Optional[str]:
     """Use OpenAI image description models with prompting for description"""
     logger.debug("Describe with OpenAI function called")
@@ -213,8 +228,11 @@ def describe_with_openai_desc(image_path: str, api_key: str = openai_api_key, pr
             with Image.open(image_path) as img:
                 img.verify()
         except Exception as e:
-            logger.error(f"Invalid image file {image_path}: {e}")
-            return None
+            if not verify_video(image_path):
+                logger.error(f"Invalid image or video file {image_path}: {e}")
+                return None
+            logger.debug("Video verified")
+            
         
         try:
             from langchain_openai import ChatOpenAI
@@ -231,14 +249,19 @@ def describe_with_openai_desc(image_path: str, api_key: str = openai_api_key, pr
             "Always give the count in the form of a range with inclusive numbers. "
             prompt = img_prompt.format("a tactical military image")
         
-        with open(image_path, "rb") as img:
-            content = img.read()
-        image_base64 = base64.b64encode(content).decode("utf-8")
+        if ("." + image_path.split(".")[-1]) in VIDEO_EXTENSIONS:
+            image_base64 = sample_frames_from_video(image_path)
+        else:
+            with open(image_path, "rb") as img:
+                content = img.read()
+            image_base64 = [base64.b64encode(content).decode("utf-8")]
         
         content = [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+                {"type": "text", "text": prompt}
             ]
+        # Create list of image_url as append them all to content
+        content += [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64}"}} for base64 in image_base64]
+
         message = []
         message.append(HumanMessage(content=content))
         logger.info(f"Sending {image_path} to openai gpt-4o")
@@ -508,6 +531,12 @@ async def describe_images_for_pages(
                 logger.warning(f"Skipping image with no path: {img_item}")
                 descs.append("No image path available")
                 continue
+            
+            # Need to force openai desc for videos
+            if ("."+img_path.split(".")[-1]) in VIDEO_EXTENSIONS and (run_all_models or "openai_desc" not in enabled_models):
+                logger.error("OpenAI Description must be selected for videos")
+                descs.append("No description available")
+                continue
 
             if run_all_models:
                 all_desc = {}
@@ -530,7 +559,9 @@ async def describe_images_for_pages(
                     if d: all_desc["Enhanced Local"] = d
 
                 # always include basic fallback
-                all_desc["Basic Fallback"] = basic_image_analysis(img_path)
+                # Not implemented for videos yet
+                if not any(img_path.lower().endswith(x) for x in VIDEO_EXTENSIONS):
+                    all_desc["Basic Fallback"] = basic_image_analysis(img_path)
                 descs.append(create_combined_description(all_desc, Path(img_path).name))
 
             else:
@@ -1132,13 +1163,23 @@ def process_document_with_context_multi_model(file_content: bytes,
             else:
                 content = f"Document: {filename}\n\nContent could not be extracted via MarkItDown."
 
-    if file_extension in [".jpg", ".png"]:
+    if file_extension in IMAGE_EXTENSIONS:
         content = content.replace("# Description:\n", "")
         images_data.append({
                     "filename": filename,
                     "storage_path": os.path.join(IMAGES_DIR, f"{filename}"),
                     "description": content,
                     "position_marker": f"[IMAGE:{filename}]",
+                    "page": 1
+                })
+        content = ""
+    elif file_extension in VIDEO_EXTENSIONS:
+        content = content.replace("# Description:\n", "")
+        images_data.append({
+                    "filename": filename,
+                    "storage_path": os.path.join(IMAGES_DIR, f"{filename}"),
+                    "description": content,
+                    "position_marker": f"[VIDEO:{filename}]",
                     "page": 1
                 })
         content = ""
@@ -1429,10 +1470,12 @@ def run_ingest_job(
                     pages_data = extract_images_from_html(content, fname, tmp_dir, fname)
 
                 # Image Support
-                elif ext in (".jpg", ".png"):
-                    logger.debug(f"Storing image {fname} to stored images")
+                elif ext in IMAGE_EXTENSIONS:
                     pages_data = extract_images_from_img(content, fname, tmp_dir, fname)
 
+                elif ext in VIDEO_EXTENSIONS:
+                    logger.debug("Video detected")
+                    pages_data = extract_images_from_video(content, fname, tmp_dir, fname)
                 else:
                     # txt, csv, pptx, etc → no images
                     pages_data = [{"page": 1, "images": [], "text": None}]
@@ -1695,8 +1738,33 @@ def extract_images_from_html(html_bytes, _filename, _temp_dir, doc_id):
         pages[0]["images"].append(out)
     return pages
 
+
+def sample_frames_from_video(filename: str):
+    # Sample every 25th frame from video
+    base64_frames = []
+    video = cv2.VideoCapture(filename)
+    frame_count = 0
+    while True:
+        success, frame = video.read()
+        if not success:
+            break
+        if frame_count % 25 == 0:  # Sample every 25th frame
+            _, buffer = cv2.imencode(".jpg", frame)
+            base64_frames.append(base64.b64encode(buffer).decode("utf-8"))
+        frame_count += 1
+    video.release()
+    return base64_frames
+
+
+def extract_images_from_video(file_content: bytes, filename: str, _temp_dir: str, doc_id: str):
+    pages_data = [{"page": 1, "images": [], "text": None}]
+    out  = os.path.join(IMAGES_DIR, filename)
+    with open(out,"wb") as f: f.write(file_content)
+    pages_data[0]["images"].append(out)
+    return pages_data
+
+
 def extract_images_from_img(file_content: bytes, filename: str, _temp_dir: str, doc_id: str):   
-    ext = filename.split(".")[-1] 
     pages_data = [{"page": 1, "images": [], "text": None}] 
     name = f"{filename}"
     out  = os.path.join(IMAGES_DIR, name)

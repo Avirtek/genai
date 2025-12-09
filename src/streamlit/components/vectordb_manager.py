@@ -9,7 +9,7 @@ from lib.api.client import api_client
 from services.chromadb_service import chromadb_service
 
 VECTORDB_API = config.endpoints.vectordb
-
+VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm"]
 
 def render_vectordb_manager(key_prefix: str = "vectordb"):
     """
@@ -258,10 +258,16 @@ def render_document_management(key_prefix: str):
     with col1:
         if st.button("Select All", key=f"{key_prefix}_select_all"):
             st.session_state[f"{key_prefix}_selected_docs"] = list(doc_groups.keys())
+            for doc_key in doc_groups.keys():
+                key=f"{key_prefix}_checkbox_{doc_key}"
+                st.session_state[key]=True
             st.rerun()
     with col2:
         if st.button("Deselect All", key=f"{key_prefix}_deselect_all"):
             st.session_state[f"{key_prefix}_selected_docs"] = []
+            for doc_key in doc_groups.keys():
+                key=f"{key_prefix}_checkbox_{doc_key}"
+                st.session_state[key]=False
             st.rerun()
 
     # Display document list
@@ -387,16 +393,22 @@ def render_document_management(key_prefix: str):
                                     # Use config.endpoints to get the correct URL
                                     resp = requests.get(image_url, timeout=5)
                                     resp.raise_for_status()
-                                    image = Image.open(BytesIO(resp.content))
+
+                                    content = BytesIO(resp.content)
+                                    mime = resp.headers["content-type"]
 
                                     # Display image with clean caption
-                                    st.image(image, caption=filename, use_container_width=True)
+                                    if ("."+filename.split(".")[-1] in VIDEO_EXTENSIONS):
+                                        st.video(content, format=mime)
+                                        st.caption(filename)
+                                    else:
+                                        st.image(content, caption=filename, use_container_width=True)
                                 except Exception as e:
                                     st.warning(f"Image preview not available error {e}")
 
                         with col2:
-                            st.markdown(f"**Filename**: {img.get('filename', 'N/A')}")
-                            st.markdown(f"**Exists**: {'' if img.get('exists', False) else ''}")
+                            st.write(f"**Filename**: `{img.get('filename', 'N/A')}`")
+                            st.write(f"**Exists**: `{img.get("storage_path", "")}`")
 
                             if img.get('description'):
                                 st.markdown("**Description**:")

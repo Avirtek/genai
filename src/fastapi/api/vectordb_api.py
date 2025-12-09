@@ -711,8 +711,20 @@ def get_stored_image(image_filename: str):
         
         # Determine content type
         ext = Path(image_filename).suffix.lower()
-        content_type = "image/jpeg" if ext == ".jpg" else "image/png"
+        video_mime_types = {
+            ".mp4": "video/mp4",
+            ".mov": "video/quicktime",
+            ".avi": "video/x-msvideo",
+            ".mkv": "video/x-matroska",
+            ".wmv": "video/x-ms-wmv",
+            ".flv": "video/x-flv",
+            ".webm": "video/webm",
+        }
+        if ext in video_mime_types:
+            content_type = video_mime_types[ext]
+            return Response(content=image_data, media_type=content_type)
         
+        content_type = "image/jpeg" if ext == ".jpg" else "image/png"
         return Response(content=image_data, media_type=content_type)
     
     except Exception as e:
