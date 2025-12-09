@@ -255,7 +255,7 @@ def generate_image_markdown(
 
     # Clean description (remove model prefixes)
     clean_desc = description
-    for prefix in ["OpenAI Vision:", "HuggingFace BLIP:", "Enhanced analysis:", "Basic analysis:"]:
+    for prefix in ["OpenAI Vision:", "OpenAI Desc:", "HuggingFace BLIP:", "Enhanced analysis:", "Basic analysis:"]:
         if clean_desc.startswith(prefix):
             clean_desc = clean_desc[len(prefix):].strip()
 
@@ -267,9 +267,9 @@ def generate_image_markdown(
     markdown = f"![{alt_text}]({image_url})"
 
     # Add caption if description exists
-    if clean_desc:
-        caption = clean_desc if len(clean_desc) <= 200 else clean_desc[:197] + "..."
-        markdown += f"\n*{caption}*"
+    # if clean_desc:
+    #     caption = clean_desc if len(clean_desc) <= 200 else clean_desc[:197] + "..."
+    #     markdown += f"\n*{caption}*"
 
     return markdown
 

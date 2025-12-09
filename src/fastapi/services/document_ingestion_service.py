@@ -29,6 +29,7 @@ import asyncio
 import functools
 from zipfile import ZipFile
 from bs4 import BeautifulSoup
+import traceback
 
 # Position-aware image placement imports
 from .position_aware_extraction import (
@@ -242,12 +243,13 @@ def describe_with_openai_desc(image_path: str, api_key: str = openai_api_key, pr
             logger.error("Failed import for langchain_openai. Please install it using 'pip install langchain_openai'")
             return None
         
+        file_type = "video" if ("." + image_path.split(".")[-1]) in VIDEO_EXTENSIONS else "image"
         if prompt_override:
             prompt = prompt_override
         else:
             img_prompt = "You are analyzing {}. Describe and provide the count terrain, activity, gear, personnel, and vehicles. " \
             "Always give the count in the form of a range with inclusive numbers. "
-            prompt = img_prompt.format("a tactical military image")
+            prompt = img_prompt.format(f"a tactical {file_type}")
         
         if ("." + image_path.split(".")[-1]) in VIDEO_EXTENSIONS:
             image_base64 = sample_frames_from_video(image_path)
@@ -267,7 +269,7 @@ def describe_with_openai_desc(image_path: str, api_key: str = openai_api_key, pr
         logger.info(f"Sending {image_path} to openai gpt-4o")
         try:
             response = openai_model.invoke(message)
-            return response.content
+            return f"OpenAI Desc: {response.content}"
         except Exception as e:
             logger.error(f"OpenAI invocation failed: {e}") 
             return None
@@ -1174,7 +1176,6 @@ def process_document_with_context_multi_model(file_content: bytes,
                 })
         content = ""
     elif file_extension in VIDEO_EXTENSIONS:
-        content = content.replace("# Description:\n", "")
         images_data.append({
                     "filename": filename,
                     "storage_path": os.path.join(IMAGES_DIR, f"{filename}"),
@@ -1187,7 +1188,6 @@ def process_document_with_context_multi_model(file_content: bytes,
     # Enhanced image integration strategy (same as before)
     if images_data:
         logger.info(f"Integrating {len(images_data)} images into document content")
-        
         if len(content.strip()) < 50:
             logger.info("Content is minimal, creating structured document with images")
             enhanced_content = [f"Document: {filename}\n"]
@@ -1203,6 +1203,7 @@ def process_document_with_context_multi_model(file_content: bytes,
                 enhanced_content.append(f"\n--- Page {page_num} ---\n")
                 for img_data in pages_with_images[page_num]:
                     enhanced_content.append(f"{img_data['position_marker']}")
+                    enhanced_content.append(f"\n{img_data["description"]}")
             
             content = "\n".join(enhanced_content)
         
@@ -1242,7 +1243,6 @@ def process_document_with_context_multi_model(file_content: bytes,
             content = separator.join(enhanced_sections)
         
         logger.info(f"Final content length after image integration: {len(content)} characters")
-
     return {
         "content": content,
         "images_data": images_data,
@@ -1386,7 +1386,6 @@ def create_chunks_with_position_support(
             chunks = smart_chunk_with_context(doc_data["content"],
                                           doc_data["images_data"],
                                           chunk_size, chunk_overlap)
-
     return chunks
 
 
@@ -1600,6 +1599,8 @@ def run_ingest_job(
                             ld = d.lower()
                             if ld.startswith("openai vision"):
                                 models_used.add("openai")
+                            elif ld.startswith("openai desc"):
+                                models_used.add("openai_desc")
                             elif ld.startswith("ollama vision"):
                                 models_used.add("ollama")
                             elif ld.startswith("huggingface blip"):
@@ -1609,7 +1610,7 @@ def run_ingest_job(
                             elif ld.startswith("basic fallback"):
                                 models_used.add("basic")
                         meta["vision_models_used"] = json.dumps(sorted(models_used))
-                        meta["openai_api_used"] = ("openai" in models_used)
+                        meta["openai_api_used"] = ("openai" in models_used) or ("openai_desc" in models_used)
                         meta["ocr_used"] = bool(c.get("ocr_used", False))
                         
                         # Validate metadata to ensure ChromaDB compatibility (no None values)
@@ -1663,6 +1664,7 @@ def run_ingest_job(
                 "error_message": str(e)
             })
             logger.error(f"[{job_id}] Error processing document {fname}: {e}")
+            logger.error(traceback.format_exc())
             raise
 
     # launch threads

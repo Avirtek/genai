@@ -89,7 +89,7 @@ def render_reconstructed_document(result: dict):
                         st.caption(filename)
                     else:
                         image = Image.open(content)
-                        st.image(image, caption=clean_alt, use_container_width=True)
+                        st.image(image, caption=clean_alt, width="stretch")
                     image_counter += 1
 
                 except Exception as e:
@@ -115,11 +115,11 @@ def render_reconstructed_document(result: dict):
                         mime = resp.headers["content-type"].split(";")[0]
 
                         if ("."+img['filename'].split(".")[-1] in VIDEO_EXTENSIONS):
-                            st.video(content, format=mime)
+                            st.video(content, format=mime, width="stretch")
                             st.caption(img['filename'])
                         else:
                             image = Image.open(content)
-                            st.image(image, caption=img['filename'])
+                            st.image(image, caption=img['filename'], width="stretch")
                     except Exception as e:
                         st.write(f"Image preview not available: {e}")
 

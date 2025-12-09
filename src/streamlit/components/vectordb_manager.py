@@ -260,14 +260,16 @@ def render_document_management(key_prefix: str):
             st.session_state[f"{key_prefix}_selected_docs"] = list(doc_groups.keys())
             for doc_key in doc_groups.keys():
                 key=f"{key_prefix}_checkbox_{doc_key}"
-                st.session_state[key]=True
+                if key in st.session_state:
+                    st.session_state[key]=True
             st.rerun()
     with col2:
         if st.button("Deselect All", key=f"{key_prefix}_deselect_all"):
             st.session_state[f"{key_prefix}_selected_docs"] = []
             for doc_key in doc_groups.keys():
                 key=f"{key_prefix}_checkbox_{doc_key}"
-                st.session_state[key]=False
+                if key in st.session_state:
+                    st.session_state[key]=False
             st.rerun()
 
     # Display document list
@@ -399,10 +401,10 @@ def render_document_management(key_prefix: str):
 
                                     # Display image with clean caption
                                     if ("."+filename.split(".")[-1] in VIDEO_EXTENSIONS):
-                                        st.video(content, format=mime)
+                                        st.video(content, format=mime, width="stretch")
                                         st.caption(filename)
                                     else:
-                                        st.image(content, caption=filename, use_container_width=True)
+                                        st.image(content, caption=filename, width="stretch")
                                 except Exception as e:
                                     st.warning(f"Image preview not available error {e}")
 

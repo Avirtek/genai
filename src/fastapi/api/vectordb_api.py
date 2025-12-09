@@ -553,6 +553,7 @@ def hybrid_reconstruct_document(chunks_data: List[Dict], base_image_url: str = "
         md = chunk["metadata"]
         content = chunk["content"] or ""
 
+
         # Heading decisions based on metadata
         section_title = md.get("section_title") or ""
         section_type = (md.get("section_type") or "").lower()
@@ -588,12 +589,17 @@ def hybrid_reconstruct_document(chunks_data: List[Dict], base_image_url: str = "
                 image_descriptions = json.loads(md.get("image_descriptions", "[]"))
 
                 for filename, path, desc in zip(image_filenames, image_paths, image_descriptions):
+                    if desc in content:
+                        add_desc = ''
+                    else:
+                        add_desc = desc
                     markdown_img = (
                         f"\n\n[Image {image_counter}]:\n"
                         f"# Description:\n"
-                        f"{(desc or '').strip()}\n"
+                        f"{(add_desc or '').strip()}\n"
                     )
                     marker = f"[IMAGE:{filename}]"
+                    marker = marker if marker in content else f"[VIDEO:{filename}]"
                     content = content.replace(marker, markdown_img)
 
                     all_images.append({
@@ -606,8 +612,15 @@ def hybrid_reconstruct_document(chunks_data: List[Dict], base_image_url: str = "
             except Exception as e:
                 logger.error(f"Failed to insert images: {e}")
 
+        # Remove prefixes after to prevent discrepancy between description and content
+        prefixes = ["OpenAI Vision:", "OpenAI Desc:", "HuggingFace BLIP:", "Enhanced analysis:", "Basic analysis:"]
+        for prefix in prefixes:
+            if prefix in content:
+                content = content.replace(prefix, "")
+        
         lines.append(content)
         lines.append("")
+
 
     reconstructed_content = "\n".join(lines).strip()
 
@@ -621,7 +634,7 @@ def hybrid_reconstruct_document(chunks_data: List[Dict], base_image_url: str = "
             "file_type": first_chunk_meta.get("file_type", "unknown"),
             "total_images": len(all_images),
             "processing_timestamp": first_chunk_meta.get("timestamp", ""),
-            "openai_api_used": ("openai" in vision_union) or first_chunk_meta.get("openai_api_used", False),
+            "openai_api_used": ("openai" in vision_union) or ("openai_desc" in vision_union) or first_chunk_meta.get("openai_api_used", False),
             "ocr_pages": int(ocr_pages),
             "vision_models_used": sorted(list(vision_union)),
             "reconstruction_method": "legacy"
@@ -661,7 +674,7 @@ def reconstruct_document(document_id: str, collection_name: str = Query(...), re
             })
 
         chunks_data.sort(key=lambda x: x["chunk_index"])
-
+        logger.debug(chunks_data)
         # Build absolute image URL for browser rendering
         # IMPORTANT: Always use localhost for browser access, not Docker internal hostname
         # The request.url.netloc might be "fastapi:9020" (Docker internal) which browsers can't access
@@ -850,7 +863,7 @@ async def ingest_url(req: URLIngestRequest):
     chunk_overlap = 200
     store_images = True
     model_name = "html"
-    selected_models = set([m for m in ['openai','ollama','huggingface','enhanced_local'] if VISION_CONFIG.get(f"{m}_enabled", False)])
+    selected_models = set([m for m in ['openai','openai_desc', 'ollama','huggingface','enhanced_local'] if VISION_CONFIG.get(f"{m}_enabled", False)])
     openai_api_key = os.getenv('OPENAI_API_KEY')
 
     try:
