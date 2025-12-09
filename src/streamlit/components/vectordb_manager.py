@@ -391,9 +391,8 @@ def render_document_management(key_prefix: str):
 
                                     # Display image with clean caption
                                     st.image(image, caption=filename, use_container_width=True)
-                                    image_counter += 1
-                                except:
-                                    st.warning("Image preview not available")
+                                except Exception as e:
+                                    st.warning(f"Image preview not available error {e}")
 
                         with col2:
                             st.markdown(f"**Filename**: {img.get('filename', 'N/A')}")
